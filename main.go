@@ -14,9 +14,11 @@ var (
 	teamLunchFlag   = beginOrderCmd.Flag("teamlunch", "are you eating alone or ordering for everyone?").Bool()
 	deliveryTimeArg = beginOrderCmd.Arg("wait", "When do you want your food delivered? Values of '0' will be ASAP").Int()
 
-	requestFoodCmd = app.Command("requestfood", "hey can you get spot me? Swear I'll make it up to you...")
-	foodArg        = requestFoodCmd.Arg("food", "name of what you want").String()
-	orderIdArg     = requestFoodCmd.Arg("orderId", "hashed id of an existing order. Can be found in the slack message").String()
+	apocalypse      = app.Command("apocalypse", "Update the gitexampledoc.txt file with new info on the apocalypse, without changing it in the filesystem")
+	apocalypseField = apocalypse.Arg("field", "Can be countdown, cause or survival_method").String()
+	apocalypseText  = apocalypse.Arg("message", "Text which updates the field").String()
+
+	kubemagic = app.Command("kubemagic", "command which runs our kubernetes port-forward example")
 )
 
 func main() {
@@ -27,12 +29,14 @@ func main() {
 			*deliveryTimeArg = 0
 		}
 		beginOrder(*teamLunchFlag, *deliveryTimeArg)
-	case requestFoodCmd.FullCommand():
-		if foodArg == nil {
-			fmt.Println("missing food, unable to request nothing")
+	case apocalypse.FullCommand():
+		if *apocalypseField != "countdown" && *apocalypseField != "cause" && *apocalypseField != "survival_method" {
+			fmt.Println("invalid apocalype tracker update field, please provide countdown, cause or survival_method as values to field argument")
 			return
 		}
-		requestFood(*foodArg, *orderIdArg)
+		updateAndPush(*apocalypseField, *apocalypseText)
+	case kubemagic.FullCommand():
+		forwardAndWork()
 	}
 
 }

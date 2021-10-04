@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
@@ -20,7 +19,7 @@ import (
 )
 
 const (
-	exampleRepoUrl  = "git@github.com:"
+	exampleRepoUrl  = "git@github.com:parkermonson/meetupexamples.git"
 	exampleFilePath = "gitexampledoc.txt"
 	githubAPIDomain = "https://api.github.com"
 	githubAPIPath   = "/repos/%s/%s/pulls"
@@ -53,9 +52,6 @@ func updateAndPush(updateField, updateText string) {
 
 	//commit and push to git
 	err = commitAndPushChanges(repo, worktree, keys)
-	handleGitCmdError(err)
-
-	err = createPullRequest(branchName)
 	handleGitCmdError(err)
 
 }
@@ -118,16 +114,77 @@ func checkoutNewBranch(wtree *gogit.Worktree, branchName string) error {
 }
 
 func updateWorkingtreeFile(worktree *gogit.Worktree, filepath, updateField, updateText string) error {
+	//get the existing file lines
+	existinglines, err := scanFileFromWorkTree(worktree, filepath)
+	if err != nil {
+		return err
+	}
+
+	//update the file lines with our new message
+	fileContent := ""
+	for _, line := range existinglines {
+		//if the line we are looking at is the field we want to update, replace it
+		if strings.Contains(line, updateField) {
+			line = updateField + "->" + updateText
+		}
+		//add the line  to the fileContent
+		fileContent += line + "\n"
+	}
+
+	//overwrite the file in memory
+	//make sure file is removed
+	err = worktree.Filesystem.Remove(filepath)
+	if err != nil {
+		return err
+	}
+
+	//recreate the file
+	newFile, err := worktree.Filesystem.Create(filepath)
+	if err != nil {
+		return err
+	}
+
+	//write the content to the file
+	_, err = newFile.Write([]byte(fileContent))
+	if err != nil {
+		return err
+	}
+
+	//add the new file back into the worktree
+	_, err = worktree.Add(filepath)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
+func scanFileFromWorkTree(worktree *gogit.Worktree, filePath string) ([]string, error) {
+	f, err := worktree.Filesystem.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
+}
+
 func commitAndPushChanges(repo *gogit.Repository, worktree *gogit.Worktree, key *ssh.PublicKeys) error {
-	commitMessage := fmt.Sprintf("changelog for weekly on-prem update for the week of %s", time.Now().Format("2006-01-02"))
+	commitMessage := "updating doomsday clock"
 
 	_, err := worktree.Commit(commitMessage, &gogit.CommitOptions{
 		Author: &object.Signature{
 			Name:  "Parker Monson",
-			Email: "parker.monson@getweave.com",
+			Email: "fishfillet103@gmail.com",
 			When:  time.Now(),
 		},
 	})
@@ -150,36 +207,6 @@ type pullRequestBody struct {
 	Head  string `json:"head"`
 	Base  string `json:"base"`
 	Body  string `json:"body"`
-}
-
-func createPullRequest(headBranch string) error {
-	formattedPath := fmt.Sprintf(githubAPIPath, "parkermonson", "meetupexamples")
-
-	prBody := pullRequestBody{
-		Title: "Updating Doomsday Clock " + time.Now().String(),
-		Head:  headBranch,
-		Base:  "master",
-		Body:  "Updating the apocalypse to account for new information",
-	}
-
-	bodyBytes, _ := json.Marshal(prBody)
-
-	req, err := http.NewRequest("POST", githubAPIDomain+formattedPath, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Add("Accept", "application/vnd.github.v3+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	//handle response however you want
-
-	return nil
 }
 
 func handleGitCmdError(err error) {
